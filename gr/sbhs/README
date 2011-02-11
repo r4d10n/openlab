@@ -1,0 +1,6 @@
+Single Board Heater System (SBHS) interface module for GNU Radio
+
+sbhs_module.py - Python hierarchical block for interfacing SBHS with GR
+sbhs.xml - GRC XML for SBHS block
+
+
