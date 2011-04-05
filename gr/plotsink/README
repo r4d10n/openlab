@@ -1,0 +1,9 @@
+Matplotlib based Plotting module for GNU Radio
+
+Requires: matplotlib, wxpython, numpy, pylab
+
+matplotsink.py - Matplotlib WxPython wrapper library (Eli Bendersky)
+plot_sink.py - Python hierarchical block for interfacing Matplotlib with GR
+plot_sink.xml - GRC XML for Plotsink block
+
+
