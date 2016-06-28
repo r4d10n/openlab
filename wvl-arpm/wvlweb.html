@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Antenna Radiation Pattern Measurement</title>
+
+<--- Install RGraph libraries --->
+<script src="libraries/RGraph.common.core.js" ></script>
+<script src="libraries/RGraph.common.dynamic.js"></script>
+<script src="libraries/RGraph.common.effects.js"></script>
+<script src="libraries/RGraph.line.js" ></script>
+<script src="libraries/RGraph.radar.js" ></script>
+
+
+<style>
+.pushbutton {  
+  text-align:center;
+  box-shadow: 1px 1px 1px;
+  padding: 2px;
+  -moz-border-radius: 10px;
+  -webkit-border-radius: 10px;
+  border-radius: 10px;
+  border: 2px solid;
+  height: 30px;
+  width: 80px;
+  float: left;	  
+  margin: 10px;
+  background-color: grey;
+}
+
+.pushbutton:hover {
+	background-color: green;
+	}
+
+#header {
+    background-color:black;
+    color:white;
+    text-align:center;
+    padding:0px;
+	margin: 5px;
+}
+
+#corner {
+	clear: both;
+    line-height:30px;
+    background-color:#eeeeee;
+    height: 50%;
+    width: 40%;
+    float:left;
+    padding:5px;
+	margin: 20px 20px 20px 20px;
+}
+
+#side {	
+    line-height:30px;
+    background-color:#eeeeee;
+    height: 50%;
+    width: 40%;
+    float:left;
+    padding:5px;
+	margin: 20px 20px 20px 20px;
+}
+
+#corner1 {
+	clear: both;
+    line-height:30px;
+    background-color:#eeeeee;
+    height: 50%;
+    width: 350px;
+    float:left;
+    padding:5px;
+	margin: 20px 20px 20px 20px;
+}
+
+#side1 {	
+    line-height:30px;
+    background-color:#eeeeee;
+    height: 50%;
+    width: 20%;
+    float:left;
+    padding:5px;
+	margin: 20px 20px 20px 20px;
+}
+
+#footer {
+    background-color:black;
+    color:white;
+    clear:both;
+    text-align:center;
+    padding:5px;
+}
+
+#log {
+    line-height:30px;
+    background-color:#eeeeee;
+    height: 50px;
+    width: 40%;
+    float:left;
+    padding:5px;
+	margin: 20px 20px 20px 20px;
+	overflow: auto;
+}
+form  { 
+	display: table; 
+	padding-left: 0;
+	padding-right: 0;
+	
+	margin-right: auto;	
+}
+p     { display: table-row;  }
+label { display: table-cell; }
+
+input { 
+	display: table-cell;
+	text-align:right;
+	font-weight: bold;
+}
+
+img {
+    padding-left: 0;
+    padding-right: 0;
+    margin-left: auto;
+    margin-right: auto;
+    display: block;
+}
+	
+</style>
+</head>
+<body>
+
+<div id="header">
+<h1>Wireless Virtual Lab @ CEN</h1>
+</div>
+
+<div id="header">
+<h3>Antenna Radiation Pattern Measurement Experiment</h3>
+</div>
+
+<div id="corner1">
+[camera url as img-src]
+<img src="http://r4d10n.hopto.org:8018/videostream.cgi?user=wvlcam&pwd=wvlcam">
+</div>
+
+
+<div id="side1">	
+<form>
+<p><label for="freq">Frequency: </label><input type="text" id="freq" style="width: 50px;" value="1000"> MHz<p>
+<p><label for="rxgain">Recieve Gain: </label><input type="text" id="rxgain" style="width: 50px;" value="20"> dB<p>
+</form>
+<div id="transmit" class="pushbutton" onclick="changeState(0)">Tx OFF</div>
+<div id="start" class="pushbutton" onclick="changeState(1)">Scan</div>
+<div id="reset" class="pushbutton" onclick="changeState(2)">Reset</div>
+<div id="left" class="pushbutton" onclick="rotor(0)"> &lt;&lt; </div>
+<input type="text" id="degrees" style="width: 50px; height: 20px; float: left; margin: 10px; padding:2px;" value="10"> <label for="degrees" style="float: left;margin: 10px; margin-left:0; padding:0px;">deg</label>
+<div id="right" class="pushbutton" onclick="rotor(1)">&gt;&gt;</div>
+</div>
+
+<div id="corner">
+<canvas id="radar" width="600" height="400">[No canvas support]</canvas>
+</div>
+
+<div id="side">
+<canvas id="spectrum" width="600" height="400">[No canvas support]</canvas>
+</div>
+
+<div id="log">log</div>
+
+<div id="footer">
+2013 (c) Amrita Vishwa Vidyapeetham
+</div>
+
+</body>
+<script type="text/javascript">
+
+var RG        = RGraph;
+
+var obj       = null;
+var obj1 	  = null;
+
+var data      = [];
+var specdata  = [];
+
+var numvalues = 120;
+var updates   = 0;
+
+var txState = 0;
+var specTimeout = null;
+var radTimeout = null;
+
+var wsport = 9000;
+var wshost = "ws://r4d10n.hopto.org:"+wsport;  // Modify to localhost or local-host :)
+
+var socket;
+var status;
+
+var consoleLogOnScreen = true; 
+
+window.onload = init();
+
+function init()
+{
+            // Pre-pad the arrays with null values						
+            for (var i=0; i < numvalues; ++i) {
+                data.push(null);                
+            }
+			
+			updates = 0;
+			radarPlotInit();
+			
+
+			spectrumPlot();			
+			consoleinit();			
+}
+
+function consoleinit()
+{
+	if (consoleLogOnScreen) {
+	// Function to output console.log to html element (logs on screen)
+	// From: http://stackoverflow.com/a/20256785/1709835
+	(function () {
+		if (!console) {
+	        console = {};
+	    }
+	    var old = console.log;
+	    var logger = document.getElementById('log');
+	    console.log = function (message) {
+	            logger.innerHTML += message + '<br />';
+				logger.scrollTop = logger.scrollHeight;  // Nice hack to always scroll to bottom :)
+	    }
+	})();
+	}
+
+}
+
+function wsTxOn(freq,rxgain) 
+{
+
+	status = 0;
+	
+	try {
+		socket = new WebSocket(wshost);
+		console.log(':: Initializing WebSocket : '+socket.readyState);
+		socket.onopen    = function(msg) { 
+							   console.log(":: Connected to CEN Wireless Virtual Lab Server :" + this.readyState); 
+							   status = 1;
+							   console.log(":: Setting Freq:  { " + freq  + " } / Rx Gain: { " + rxgain +" } "); 							   
+							   socket.send("==Frequency: " + freq + "|RxGain: " + rxgain);
+						   };
+		
+		socket.onmessage = function(msg) { 
+								if (msg.data.includes("++")) status = 2;
+								
+								if (status == 2 && msg.data.includes("[")) 
+								{
+									console.log(":: Values: "+msg.data);
+									specdata = JSON.parse(msg.data);
+
+									obj1.original_data[0] = specdata;
+									
+									labelarray = ['']; 
+									labelarray.push(freq - 1);
+									labelarray.push('');
+									labelarray.push(freq - 0.5);
+									labelarray.push('');									
+									labelarray.push(freq);
+									labelarray.push('');
+									labelarray.push(parseInt(freq) + 1);
+									labelarray.push('');
+									labelarray.push(parseInt(freq) + 1.5);
+									labelarray.push('');
+									
+									obj1.set({labels:labelarray});									
+									obj1.draw(); 
+									
+									cfval = (specdata[8]) / 18;
+									if (cfval < 0) cfval = 0;
+									
+									data.push(cfval);
+									status = 3;									
+								}
+							
+						   };
+		socket.onclose   = function(msg) { 
+							   if (status == 1) console.log(":: Disconnected from Server : "+this.readyState); 
+							   else if (status == 0) console.log(":: Connection Unsuccessful { Check Network Connectivity } : "+this.readyState); 							   
+						   };		
+		}
+	catch(ex){ 
+		console.log(ex); 
+	}		
+}
+
+function wsTxOff()
+{
+	if (socket != null) {
+		console.log(":: TX Off | Disconnected from Server");
+		socket.send("==TxOff")
+		socket.close();
+		socket=null;
+		status = 0;
+	}
+}
+
+function rotor(dir)
+{
+	deg = document.getElementById('degrees').value;
+	
+	if (status > 0)
+	{
+		if (dir == 0)
+		{
+			socket.send("==Rotor: L|" + deg);		
+			console.log("::Rotor - Left | degrees:" + deg);
+		}
+		else if (dir == 1)
+		{
+			socket.send("==Rotor: R|" + deg);
+			console.log("::Rotor - Right | degrees:" + deg);
+		}
+	}
+	else console.log("::Rotor: Socket not connected.")	
+		
+}
+
+function add(a, b) {
+    return a + b;
+}
+
+
+function changeState(val)
+{
+	if (val == 1) 
+	{		
+		data = [];  updates = 0;
+		
+		document.getElementById('start').style.backgroundColor = 'gray';
+		radarPlotFill();
+		
+	}
+	else if (val == 0)
+	{
+		if (txState == 0) 
+		{	
+			txState = 1;
+	
+			specdata = []; 
+			
+			/* TODO: Validate freq,gain vals */
+			document.getElementById('transmit').style.backgroundColor = 'red';
+			document.getElementById('transmit').onmouseover = function() { this.style.backgroundColor = '#eeeeee'; }
+			document.getElementById('transmit').innerHTML = "Tx ON";
+						
+			wsTxOn(document.getElementById('freq').value,document.getElementById('rxgain').value)
+						
+		}
+		else
+		{			
+			txState = 0;
+			
+			wsTxOff();
+			
+			document.getElementById('transmit').style.backgroundColor = 'gray';
+			document.getElementById('transmit').onmouseover = function() { this.style.backgroundColor = 'green'; }
+			document.getElementById('transmit').innerHTML = "Tx OFF";		
+		}
+	}
+	else if (val == 3)
+	{
+		init();
+	}
+}
+
+function radarPlotInit()
+{
+	RG.Clear(document.getElementById("radar"));		
+
+	if (!obj) 
+	{
+		obj = new RG.Radar({
+				id: 'radar',
+				data: [],				
+				options: 
+				{
+					textSize: 12,
+					title: 'Antenna Radiation Pattern',
+					labels: ['0', '90', '180', '270'],
+					colors: ['Gradient(#b4ddb4:#002400)'],
+					colorsAlpha: 0.8,
+					tickmarks: 'dot',
+					ticksize: 10,
+					spline:true,
+					backgroundCirclesPoly: true,
+					backgroundCirclesSpacing: 25,
+					shadow: true,                            
+					gutterTop: 25,
+					gutterBottom: 25,
+					gutterRight: 25,
+					scaleZerostart: true	
+				}
+		});
+		
+		obj.original_data[0] = data;		
+		obj.draw();
+	}	
+}
+
+function radarPlotFill()
+{
+	RG.Clear(document.getElementById("radar"));
+
+	if (data.length > numvalues) {
+		data = RG.arrayShift(data);
+	}
+
+	if (RG.ISIE8) {
+		alert('[MSIE] Sorry, Internet Explorer 8 is not fast enough to support dynamic charts');
+	} else {
+		obj.original_data[0] = data;
+		obj.draw(); 
+		if (updates < 120) setTimeout(radarPlotFill, 500);  // Timing to suit Rotor rotation. TODO: Timeout must be cleared
+	}
+
+	updates++;
+	if (updates % 10 === 0) {
+		console.log(updates +" - " + data.length);
+	}
+	
+	socket.send("==Rotor: R|5");
+}
+
+function spectrumPlot()
+{
+	obj1 = null;
+	
+	if (!obj1) 
+	{
+		obj1 = new RGraph.Line({
+            id: 'spectrum',
+            data: [],
+            options: {
+                gutterTop: 50,
+                gutterLeft: 85,
+                colors: ['#333'],
+                shadow: false,
+                spline: true,
+                linewidth: 5,
+                ymax: 60,
+				ymin: -60,
+                scaleDecimals: 1,
+                ylabelsCount: 5,
+                backgroundGridAutofitNumhlines: 9,
+                backgroundGridAutofitNumvlines: 9,
+                axisColor: 'gray',
+                textSize: 10,
+                textAccessible: true,
+                numyticks: 6,
+                numxticks: 3,
+				tickmarks: null,
+                title: 'Spectrum plot',                
+                backgroundHbars: [
+                    [-60,30,'rgba(240,240,240,0.25)'],
+                    [-30,30,'rgba(210,210,210,0.25)'],
+                    [0,30,'rgba(180,180,180,.25)'],
+					[30,30,'rgba(150,150,150,.25)']
+                ],	
+                labels:[], 
+                unitsPost: 'dB'
+            }
+        });
+	}
+	
+	obj1.draw();
+}
+
+function specPlotFill()
+{	
+	if (RG.ISIE8) {
+		alert('[MSIE] Sorry, Internet Explorer 8 is not fast enough to support dynamic charts');
+	} else {
+		obj1.original_data[0] = specdata;
+		obj1.trace2(); 
+		specTimeout = setTimeout(specPlotFill, 1000);
+	}
+
+	specupdates++;
+	if (specupdates % 100 === 0) {
+		console.log(specupdates);
+	}
+}
+
+</script>
+</html>
